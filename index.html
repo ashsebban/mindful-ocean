@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fishtank Mind-Clearing</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #041226;
+      font-family: "Avenir Next", "Avenir", "Segoe UI", sans-serif;
+    }
+
+    body { touch-action: none; }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    .intro-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.52);
+    }
+
+    .intro-modal.open {
+      display: flex;
+    }
+
+    .intro-panel {
+      width: min(580px, 94vw);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(8, 18, 38, 0.96);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      color: rgba(232, 251, 255, 0.95);
+    }
+
+    .intro-panel h2 {
+      font-size: 1rem;
+    }
+
+    .intro-panel p {
+      color: rgba(210, 240, 250, 0.9);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .intro-subtitle {
+      font-size: 0.83rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: rgba(224, 248, 255, 0.94);
+    }
+
+    .intro-list {
+      color: rgba(210, 240, 250, 0.88);
+      font-size: 0.84rem;
+      line-height: 1.35;
+      padding-left: 16px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .intro-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .intro-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: rgba(210, 240, 250, 0.88);
+      font-size: 0.8rem;
+    }
+
+    .intro-btn {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(232, 251, 255, 0.95);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="intro-modal" id="intro-modal" aria-hidden="true">
+    <div class="intro-panel" role="dialog" aria-modal="true" aria-label="About Mind-Clearing Ocean">
+      <h2>Mind-Clearing Ocean</h2>
+      <p>This interactive ocean piece explores motion, calm, and focus. I built it to turn a screensaver concept into a mindful interactive experience.</p>
+      <div class="intro-subtitle">How To Play</div>
+      <ul class="intro-list">
+        <li><strong>Relax Mode:</strong> observe calm fish flow</li>
+        <li><strong>Declutter Your Mind:</strong> tap fish and watch them swim away</li>
+        <li><strong>Breathing Exercise:</strong> follow inhale/exhale prompts to clear the scene</li>
+      </ul>
+      <div class="intro-actions">
+        <label class="intro-check"><input id="intro-skip" type="checkbox" /> Don't show again</label>
+        <button class="intro-btn" id="intro-start-btn" type="button">Enter Ocean</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const INTRO_STORAGE_KEY = "fishtank-intro-hidden-v1";
+      const MODE = {
+        RELAX: "relax",
+        DECLUTTER: "declutter",
+        BREATHING: "breathing",
+        CLEARED: "cleared"
+      };
+
+      const PHASE = {
+        INHALE: "inhale",
+        EXHALE: "exhale"
+      };
+
+      const CONFIG = {
+        fishCount: 40,
+        streamDir: 1,
+        streamSpeedMin: 0.068,
+        streamSpeedMax: 0.128,
+        pokeRadiusPad: 8,
+
+        breathTotalMs: 120000,
+        inhaleMs: 4000,
+        exhaleMs: 4000,
+        exhaleReleaseMin: 2,
+        exhaleReleaseMax: 4,
+
+        particleCount: 18,
+        ambientBubbleCount: 6,
+        popLifeMs: 520,
+
+        tailCadenceMin: 0.0045,
+        tailCadenceMax: 0.0068,
+        tailCadenceRise: 0.11,
+        tailCadenceFall: 0.028,
+        thrustDecay: 0.965,
+        accelScale: 0.0046,
+        dragBase: 0.992,
+        swishThreshold: 0.72,
+        swishChainWindowMs: 340,
+        swishStreakMax: 9,
+        swishImpulseBase: 0.06,
+        swishImpulseStep: 0.16,
+        swishImpulseMaxMult: 2.4,
+
+        speedMinFactor: 0.5,
+        speedMaxFactor: 2.2,
+        schoolCruiseScale: 0.8,
+        schoolMaxFactor: 1.5,
+
+        fleeCadenceBoost: 3.15,
+        fleeBurstCadenceBoost: 6.2,
+        fleeBurstMs: 280,
+        fleeHeadingLerp: 0.24,
+        fleeBurstHeadingLerp: 0.34,
+        fleeMinSpeedFactor: 1.35,
+        fleeBurstMinSpeedFactor: 2.5,
+        fleeSpeedMaxFactor: 2.6,
+        fleeBurstSpeedMaxFactor: 3.3,
+        cadenceDriftMin: 0.82,
+        cadenceDriftMax: 1.22,
+        cadenceShiftMinMs: 1800,
+        cadenceShiftMaxMs: 5200,
+
+        tapPopCountMin: 4,
+        tapPopCountMax: 8,
+        tapPopLifeMinMs: 420,
+        tapPopLifeMaxMs: 700,
+        tapPopAlphaMax: 180,
+        tapPopCap: 48,
+        tapBurstImpulseMs: 150,
+
+        fleeTrailLifeMinMs: 420,
+        fleeTrailLifeMaxMs: 620,
+        fleeTrailAlphaMax: 65,
+        fleeTrailIntervalFastMs: 190,
+        fleeTrailIntervalSlowMs: 280,
+        fleeTrailCap: 64,
+
+        exhaleBloomCountMin: 2,
+        exhaleBloomCountMax: 5,
+        exhaleBloomLifeMinMs: 450,
+        exhaleBloomLifeMaxMs: 700,
+        exhaleBloomAlphaMax: 55,
+        exhaleBloomCap: 28
+      };
+      const WISDOM_LINES = [
+        "Clarity is not empty. It is quiet.",
+        "Let the noise pass. Keep the calm.",
+        "You do not have to chase every thought.",
+        "A steady breath clears a crowded mind.",
+        "Soft attention is still strength.",
+        "Small releases create wide space."
+      ];
+
+      const state = {
+        mode: MODE.RELAX,
+        fish: [],
+        particles: [],
+        ambientBubbles: [],
+        pops: [],
+        bubbleFx: {
+          tapPop: [],
+          fleeTrail: [],
+          exhaleBloom: []
+        },
+        controls: {
+          declutterBtn: null,
+          breathingBtn: null,
+          relaxBtn: null,
+          restartBtn: null
+        },
+        breath: {
+          active: false,
+          elapsedMs: 0,
+          phase: PHASE.INHALE,
+          phaseElapsedMs: 0
+        },
+        currentWisdom: "",
+        lastNow: 0
+      };
+
+      const introEl = {
+        modal: document.getElementById("intro-modal"),
+        skip: document.getElementById("intro-skip"),
+        startBtn: document.getElementById("intro-start-btn")
+      };
+
+      function rand(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      function nowMs() {
+        return performance.now();
+      }
+
+      function openIntroModal() {
+        introEl.modal.classList.add("open");
+        introEl.modal.setAttribute("aria-hidden", "false");
+      }
+
+      function closeIntroModal() {
+        if (introEl.skip.checked) {
+          localStorage.setItem(INTRO_STORAGE_KEY, "1");
+        }
+        introEl.modal.classList.remove("open");
+        introEl.modal.setAttribute("aria-hidden", "true");
+      }
+
+      function createFish() {
+        const lane = rand(height * 0.3, height * 0.9);
+        // Slightly larger fish for better foreground presence (~15% up).
+        const size = rand(25, 41);
+        const baseSpeed = rand(CONFIG.streamSpeedMin, CONFIG.streamSpeedMax);
+        const baseCadence = rand(CONFIG.tailCadenceMin, CONFIG.tailCadenceMax);
+        const dir = CONFIG.streamDir;
+
+        return {
+          x: rand(-width * 0.3, width * 1.2),
+          y: lane,
+          laneY: lane,
+          size,
+          shade: rand(112, 190),
+          alpha: rand(165, 235),
+
+          state: "school",
+          dir,
+          heading: dir > 0 ? 0 : Math.PI,
+          headingTarget: dir > 0 ? 0 : Math.PI,
+
+          speedBase: baseSpeed,
+          speed: baseSpeed,
+          vx: baseSpeed * dir,
+          vy: 0,
+
+          tailPhase: rand(0, Math.PI * 2),
+          tailStrokePrev: rand(-0.5, 0.5),
+          tailCadenceBase: baseCadence,
+          tailCadence: baseCadence,
+          tailCadenceTarget: baseCadence,
+          swishStreak: 0,
+          lastSwishAt: 0,
+          cadenceBias: 1,
+          cadenceBiasTarget: rand(CONFIG.cadenceDriftMin, CONFIG.cadenceDriftMax),
+          nextCadenceShiftMs: 0,
+
+          thrust: 0,
+
+          fleeDirX: dir,
+          fleeTargetY: lane,
+          nextTrailEmitMs: 0,
+          burstUntilMs: 0,
+
+          wigglePhase: rand(0, Math.PI * 2)
+        };
+      }
+
+      function createParticle() {
+        return {
+          x: rand(0, width),
+          y: rand(0, height),
+          r: rand(0.8, 2),
+          vx: rand(-0.015, 0.02),
+          vy: rand(-0.06, -0.015),
+          a: rand(10, 24)
+        };
+      }
+
+      function createAmbientBubble(spawnAnywhere = true) {
+        return {
+          x: rand(0, width),
+          y: spawnAnywhere ? rand(0, height) : rand(height, height + 80),
+          r: rand(2.4, 5.6),
+          vy: rand(0.08, 0.18),
+          wobble: rand(0, Math.PI * 2),
+          amp: rand(0.08, 0.28),
+          a: rand(15, 40)
+        };
+      }
+
+      function pushCapped(channel, cap, entry) {
+        channel.push(entry);
+        if (channel.length > cap) channel.splice(0, channel.length - cap);
+      }
+
+      function addPop(x, y) {
+        state.pops.push({ x, y, bornAt: nowMs() });
+        if (state.pops.length > 36) state.pops.shift();
+      }
+
+      function emitTapPop(x, y, vxHint = 0) {
+        const count = Math.floor(rand(CONFIG.tapPopCountMin, CONFIG.tapPopCountMax + 1));
+        for (let i = 0; i < count; i++) {
+          const a = rand(0, Math.PI * 2);
+          const sp = rand(0.045, 0.11);
+          pushCapped(state.bubbleFx.tapPop, CONFIG.tapPopCap, {
+            x: x + rand(-5, 5),
+            y: y + rand(-4, 4),
+            burstVx: Math.cos(a) * sp + vxHint * 0.02,
+            burstVy: Math.sin(a) * sp,
+            floatVy: rand(0.06, 0.14),
+            r: rand(2.0, 3.8),
+            bornAt: nowMs(),
+            lifeMs: rand(CONFIG.tapPopLifeMinMs, CONFIG.tapPopLifeMaxMs),
+            wobble: rand(0, Math.PI * 2)
+          });
+        }
+      }
+
+      function emitFleeTrailBubble(x, y, vxHint = 0, vyHint = 0) {
+        pushCapped(state.bubbleFx.fleeTrail, CONFIG.fleeTrailCap, {
+          x: x + rand(-1.8, 1.8),
+          y: y + rand(-1.5, 1.5),
+          vx: rand(-0.015, 0.015) + vxHint * 0.022,
+          vy: rand(0.07, 0.13) + Math.max(0, -vyHint) * 0.02,
+          r: rand(0.9, 1.7),
+          bornAt: nowMs(),
+          lifeMs: rand(CONFIG.fleeTrailLifeMinMs, CONFIG.fleeTrailLifeMaxMs),
+          wobble: rand(0, Math.PI * 2)
+        });
+      }
+
+      function emitExhaleBloom(cx, cy) {
+        const count = Math.floor(rand(CONFIG.exhaleBloomCountMin, CONFIG.exhaleBloomCountMax + 1));
+        for (let i = 0; i < count; i++) {
+          pushCapped(state.bubbleFx.exhaleBloom, CONFIG.exhaleBloomCap, {
+            x: cx + rand(-20, 20),
+            y: cy + rand(-12, 12),
+            vx: rand(-0.012, 0.012),
+            vy: rand(0.07, 0.13),
+            r: rand(1.0, 2.0),
+            bornAt: nowMs(),
+            lifeMs: rand(CONFIG.exhaleBloomLifeMinMs, CONFIG.exhaleBloomLifeMaxMs),
+            wobble: rand(0, Math.PI * 2)
+          });
+        }
+      }
+
+      function resetWorld(nextMode = MODE.RELAX) {
+        state.mode = nextMode;
+
+        state.fish.length = 0;
+        for (let i = 0; i < CONFIG.fishCount; i++) state.fish.push(createFish());
+
+        state.particles.length = 0;
+        for (let i = 0; i < CONFIG.particleCount; i++) state.particles.push(createParticle());
+
+        state.ambientBubbles.length = 0;
+        for (let i = 0; i < CONFIG.ambientBubbleCount; i++) state.ambientBubbles.push(createAmbientBubble(true));
+
+        state.pops.length = 0;
+        state.bubbleFx.tapPop.length = 0;
+        state.bubbleFx.fleeTrail.length = 0;
+        state.bubbleFx.exhaleBloom.length = 0;
+
+        state.breath.active = false;
+        state.breath.elapsedMs = 0;
+        state.breath.phase = PHASE.INHALE;
+        state.breath.phaseElapsedMs = 0;
+        state.currentWisdom = WISDOM_LINES[Math.floor(rand(0, WISDOM_LINES.length))];
+      }
+
+      function setup() {
+        const canvas = createCanvas(window.innerWidth, window.innerHeight);
+        canvas.parent("app");
+        canvas.elt.style.touchAction = "none";
+        textFont("Avenir Next");
+        resetWorld();
+        state.lastNow = nowMs();
+        introEl.startBtn.addEventListener("click", closeIntroModal);
+        introEl.modal.addEventListener("click", (evt) => {
+          if (evt.target === introEl.modal) closeIntroModal();
+        });
+        if (localStorage.getItem(INTRO_STORAGE_KEY) !== "1") openIntroModal();
+      }
+
+      function windowResized() {
+        resizeCanvas(window.innerWidth, window.innerHeight);
+        resetWorld();
+      }
+
+      function drawBackground(ts) {
+        background(7, 22, 44);
+
+        for (let y = 0; y < height; y++) {
+          const t = y / Math.max(1, height);
+          const c = lerpColor(color(8, 27, 56), color(4, 78, 103), Math.pow(t, 0.94));
+          stroke(red(c), green(c), blue(c));
+          line(0, y, width, y);
+        }
+
+        noStroke();
+        const wave = ts * 0.0002;
+        for (let i = 0; i < 3; i++) {
+          const x = width * (0.12 + i * 0.33) + Math.sin(wave + i) * width * 0.04;
+          fill(172, 234, 255, 8);
+          quad(x, 0, x + width * 0.08, 0, x + width * 0.18, height, x - width * 0.13, height);
+        }
+
+        fill(4, 16, 36, 62);
+        rect(0, height * 0.85, width, height * 0.15);
+        drawKelp(ts);
+      }
+
+      function drawKelp(ts) {
+        const baseY = height * 0.985;
+        const bedY = height * 0.86;
+        const stalks = Math.max(6, Math.floor(width / 180));
+
+        noFill();
+        strokeWeight(2);
+        for (let i = 0; i < stalks; i++) {
+          const x = ((i + 0.5) / stalks) * width + Math.sin(i * 4.9) * 8;
+          const h = 55 + ((i * 37) % 55);
+          const tipY = Math.max(bedY, baseY - h);
+          const sway = Math.sin(ts * 0.00055 + i * 0.9) * 11;
+          const midY = (baseY + tipY) * 0.5;
+
+          stroke(70, 130, 112, 30);
+          bezier(x, baseY, x + sway * 0.2, midY + 12, x + sway * 0.8, midY - 10, x + sway, tipY);
+        }
+      }
+
+      function drawFish(f, ts) {
+        const tailSwish = Math.sin(ts * f.tailCadence + f.tailPhase) * 0.12;
+        const facing = Math.cos(f.heading) >= 0 ? 1 : -1;
+
+        push();
+        translate(f.x, f.y);
+        scale(facing, 1);
+        noStroke();
+
+        fill(30, f.shade, f.shade + 36, f.alpha);
+        ellipse(0, 0, f.size * 1.15, f.size * 0.54);
+
+        fill(22, f.shade - 10, f.shade + 18, f.alpha * 0.9);
+        triangle(
+          -f.size * 0.62,
+          0,
+          -f.size * 0.94,
+          -f.size * (0.22 + tailSwish),
+          -f.size * 0.94,
+          f.size * (0.22 - tailSwish)
+        );
+
+        fill(232, 252, 255, f.alpha * 0.75);
+        circle(f.size * 0.22, -f.size * 0.06, f.size * 0.09);
+
+        fill(16, 28, 42, f.alpha);
+        circle(f.size * 0.3, -f.size * 0.05, f.size * 0.05);
+        pop();
+      }
+
+      function updateParticles(dt) {
+        noStroke();
+        for (let i = 0; i < state.particles.length; i++) {
+          const p = state.particles[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+
+          if (p.y < -3) p.y = height + 3;
+          if (p.x < -3) p.x = width + 3;
+          if (p.x > width + 3) p.x = -3;
+
+          fill(210, 245, 255, p.a);
+          circle(p.x, p.y, p.r);
+        }
+      }
+
+      function updateAmbientBubbles(dt, ts) {
+        noFill();
+        strokeWeight(1);
+
+        for (let i = 0; i < state.ambientBubbles.length; i++) {
+          const b = state.ambientBubbles[i];
+          b.y -= b.vy * dt * 0.06;
+          b.wobble += 0.01 * dt;
+          b.x += Math.sin(b.wobble + ts * 0.00045) * b.amp * 0.08;
+
+          if (b.y < -10) {
+            state.ambientBubbles[i] = createAmbientBubble(false);
+            continue;
+          }
+
+          stroke(208, 242, 255, b.a);
+          circle(b.x, b.y, b.r * 2);
+        }
+      }
+
+      function updateFish(dt, ts) {
+        const streamDir = CONFIG.streamDir;
+        const breathingPhaseScale =
+          state.mode === MODE.BREATHING
+            ? (state.breath.phase === PHASE.INHALE ? 0.9 : 1.12)
+            : 1;
+
+        for (let i = state.fish.length - 1; i >= 0; i--) {
+          const f = state.fish[i];
+
+          if (f.state === "school") {
+            if (!(state.mode === MODE.DECLUTTER || state.mode === MODE.BREATHING)) {
+              f.dir = streamDir;
+            }
+
+            if (ts >= f.nextCadenceShiftMs) {
+              f.cadenceBiasTarget = rand(CONFIG.cadenceDriftMin, CONFIG.cadenceDriftMax);
+              f.nextCadenceShiftMs = ts + rand(CONFIG.cadenceShiftMinMs, CONFIG.cadenceShiftMaxMs);
+            }
+            f.cadenceBias = lerp(f.cadenceBias, f.cadenceBiasTarget, 0.01);
+
+            f.headingTarget = f.dir > 0 ? 0 : Math.PI;
+            f.headingTarget += Math.sin(ts * 0.001 + f.wigglePhase) * 0.06;
+            f.laneY = constrain(f.laneY, height * 0.22, height * 0.86);
+
+            f.tailCadenceTarget = f.tailCadenceBase * breathingPhaseScale * f.cadenceBias;
+          } else {
+            const exitX = f.fleeDirX > 0 ? width + 120 : -120;
+            f.headingTarget = Math.atan2(f.fleeTargetY - f.y, exitX - f.x);
+            const inBurst = ts < f.burstUntilMs;
+            f.tailCadenceTarget = f.tailCadenceBase * (
+              inBurst ? CONFIG.fleeBurstCadenceBoost : CONFIG.fleeCadenceBoost
+            );
+          }
+
+          const cadenceLerp = f.tailCadenceTarget > f.tailCadence ? CONFIG.tailCadenceRise : CONFIG.tailCadenceFall;
+          f.tailCadence = lerp(f.tailCadence, f.tailCadenceTarget, cadenceLerp);
+
+          const cadenceRatio = f.tailCadence / Math.max(0.0001, f.tailCadenceBase);
+          const stroke = Math.sin(ts * f.tailCadence + f.tailPhase);
+          const didSwish =
+            stroke >= CONFIG.swishThreshold &&
+            f.tailStrokePrev < CONFIG.swishThreshold;
+          f.tailStrokePrev = stroke;
+
+          if (didSwish) {
+            const chainContinues = ts - f.lastSwishAt <= CONFIG.swishChainWindowMs;
+            f.swishStreak = chainContinues
+              ? Math.min(CONFIG.swishStreakMax, f.swishStreak + 1)
+              : 1;
+            f.lastSwishAt = ts;
+
+            const streakMult = Math.min(
+              CONFIG.swishImpulseMaxMult,
+              1 + (f.swishStreak - 1) * CONFIG.swishImpulseStep
+            );
+            // One swish adds little momentum; repeated swishes ramp propulsion.
+            f.thrust += CONFIG.swishImpulseBase * streakMult * cadenceRatio;
+          }
+
+          f.thrust *= CONFIG.thrustDecay;
+
+          f.speed += f.thrust * CONFIG.accelScale * dt;
+          f.speed *= Math.pow(CONFIG.dragBase, dt / 16);
+
+          const cruiseScale = f.state === "school" ? CONFIG.schoolCruiseScale : 1;
+          const targetCruise = f.speedBase * cadenceRatio * cruiseScale;
+          let maxFactor = CONFIG.speedMaxFactor;
+          if (f.state === "school") {
+            maxFactor = CONFIG.schoolMaxFactor;
+          } else {
+            const inBurst = ts < f.burstUntilMs;
+            maxFactor = inBurst ? CONFIG.fleeBurstSpeedMaxFactor : CONFIG.fleeSpeedMaxFactor;
+          }
+          f.speed = lerp(f.speed, targetCruise, 0.026);
+          let minFactor = CONFIG.speedMinFactor;
+          if (f.state === "flee") {
+            minFactor = ts < f.burstUntilMs
+              ? CONFIG.fleeBurstMinSpeedFactor
+              : CONFIG.fleeMinSpeedFactor;
+          }
+          f.speed = constrain(
+            f.speed,
+            f.speedBase * minFactor,
+            f.speedBase * maxFactor
+          );
+
+          const headingLerp =
+            f.state === "flee"
+              ? (ts < f.burstUntilMs ? CONFIG.fleeBurstHeadingLerp : CONFIG.fleeHeadingLerp)
+              : 0.06;
+          f.heading = lerp(f.heading, f.headingTarget, headingLerp);
+          f.vx = Math.cos(f.heading) * f.speed;
+          f.vy = Math.sin(f.heading) * f.speed * 0.72;
+
+          f.x += f.vx * dt;
+          f.y += f.vy * dt;
+          f.y += (f.laneY - f.y) * 0.006 * dt;
+
+          if (f.state === "school") {
+            if (state.mode === MODE.DECLUTTER || state.mode === MODE.BREATHING) {
+              const edgePad = f.size * 0.9;
+              const minTurnSpeed = f.speedBase * 1.12;
+              if (f.x > width - edgePad) {
+                f.x = width - edgePad - 1.6;
+                f.dir = -1;
+                f.heading = Math.PI;
+                f.headingTarget = Math.PI;
+                f.speed = Math.max(f.speed, minTurnSpeed);
+                f.thrust += 0.2;
+              } else if (f.x < edgePad) {
+                f.x = edgePad + 1.6;
+                f.dir = 1;
+                f.heading = 0;
+                f.headingTarget = 0;
+                f.speed = Math.max(f.speed, minTurnSpeed);
+                f.thrust += 0.2;
+              } else {
+                // Safety net: if a fish slows near an edge, re-prime it away from the wall.
+                const nearRight = f.x > width - edgePad * 1.6;
+                const nearLeft = f.x < edgePad * 1.6;
+                if ((nearRight || nearLeft) && f.speed < f.speedBase * 0.82) {
+                  f.dir = nearRight ? -1 : 1;
+                  f.headingTarget = f.dir > 0 ? 0 : Math.PI;
+                  f.speed = Math.max(f.speed, f.speedBase * 0.9);
+                  f.thrust += 0.12;
+                }
+              }
+            } else {
+              if (streamDir > 0 && f.x > width + f.size * 1.8) {
+                f.x = -f.size * 1.8;
+                f.y = rand(height * 0.22, height * 0.82);
+                f.laneY = f.y;
+              }
+              if (streamDir < 0 && f.x < -f.size * 1.8) {
+                f.x = width + f.size * 1.8;
+                f.y = rand(height * 0.22, height * 0.82);
+                f.laneY = f.y;
+              }
+            }
+          } else {
+            const t = nowMs();
+            // If a fleeing fish hugs a side too long, force a stronger outward heading.
+            if (f.fleeDirX > 0 && f.x > width - f.size * 0.6) {
+              f.headingTarget = 0;
+              f.speed = Math.max(f.speed, f.speedBase * 1.2);
+              f.thrust += 0.18;
+            } else if (f.fleeDirX < 0 && f.x < f.size * 0.6) {
+              f.headingTarget = Math.PI;
+              f.speed = Math.max(f.speed, f.speedBase * 1.2);
+              f.thrust += 0.18;
+            }
+
+            if (t >= f.nextTrailEmitMs) {
+              const tailX = f.x - Math.sign(Math.cos(f.heading) || 1) * f.size * 0.5;
+              const tailY = f.y + rand(-2.2, 2.2);
+              emitFleeTrailBubble(tailX, tailY, f.vx, f.vy);
+
+              const fastness = constrain((f.speed - f.speedBase) / (f.speedBase * 1.2), 0, 1);
+              const nextInterval =
+                CONFIG.fleeTrailIntervalSlowMs -
+                fastness * (CONFIG.fleeTrailIntervalSlowMs - CONFIG.fleeTrailIntervalFastMs);
+              f.nextTrailEmitMs = t + nextInterval;
+            }
+
+            const out =
+              f.x < -f.size * 2.5 ||
+              f.x > width + f.size * 2.5 ||
+              f.y < -f.size * 2.5 ||
+              f.y > height + f.size * 2.5;
+
+            if (out) {
+              state.fish.splice(i, 1);
+              continue;
+            }
+          }
+
+          f.y = constrain(f.y, height * 0.16, height * 0.9);
+        }
+      }
+
+      function releaseFish(fish, fromX, fromY, biasToEdge = true) {
+        fish.state = "flee";
+
+        const targetX = biasToEdge ? (fish.x < width * 0.5 ? -80 : width + 80) : (fish.x + (fish.dir > 0 ? 120 : -120));
+        fish.fleeDirX = targetX > fish.x ? 1 : -1;
+        fish.fleeTargetY = constrain(fish.y + rand(-24, 24), height * 0.2, height * 0.86);
+
+        fish.headingTarget = Math.atan2(fish.fleeTargetY - fish.y, targetX - fish.x);
+        fish.heading = fish.headingTarget;
+        fish.burstUntilMs = nowMs() + CONFIG.fleeBurstMs;
+        fish.tailCadence = Math.max(fish.tailCadence, fish.tailCadenceBase * 3.5);
+        fish.tailCadenceTarget = fish.tailCadenceBase * CONFIG.fleeBurstCadenceBoost;
+        fish.speed = Math.max(fish.speed, fish.speedBase * CONFIG.fleeBurstMinSpeedFactor);
+        fish.thrust += 1.35;
+
+        fish.nextTrailEmitMs = nowMs() + rand(CONFIG.fleeTrailIntervalFastMs, CONFIG.fleeTrailIntervalSlowMs);
+
+        addPop(fish.x, fish.y);
+        emitTapPop(fish.x - fish.dir * fish.size * 0.45, fish.y, fish.vx);
+      }
+
+      function tryPokeFish(x, y) {
+        if (state.mode !== MODE.DECLUTTER) return false;
+
+        for (let i = state.fish.length - 1; i >= 0; i--) {
+          const f = state.fish[i];
+          if (f.state !== "school") continue;
+          const dx = x - f.x;
+          const dy = y - f.y;
+          const r = f.size * 0.55 + CONFIG.pokeRadiusPad;
+          if (dx * dx + dy * dy <= r * r) {
+            releaseFish(f, x, y, true);
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function breathingExhaleRelease() {
+        const candidates = [];
+        for (let i = 0; i < state.fish.length; i++) {
+          if (state.fish[i].state === "school") candidates.push(state.fish[i]);
+        }
+        if (candidates.length === 0) return;
+
+        const releaseCount = Math.min(
+          candidates.length,
+          Math.floor(rand(CONFIG.exhaleReleaseMin, CONFIG.exhaleReleaseMax + 1))
+        );
+
+        for (let i = 0; i < releaseCount; i++) {
+          const idx = Math.floor(rand(0, candidates.length));
+          const fish = candidates.splice(idx, 1)[0];
+          releaseFish(fish, width * 0.5, height * 0.56, true);
+        }
+
+        emitExhaleBloom(width * 0.5, height * 0.56);
+      }
+
+      function updateBreathing(dt) {
+        if (state.mode !== MODE.BREATHING) return;
+
+        state.breath.elapsedMs = Math.min(CONFIG.breathTotalMs, state.breath.elapsedMs + dt);
+        state.breath.phaseElapsedMs += dt;
+
+        const currentPhaseMs = state.breath.phase === PHASE.INHALE ? CONFIG.inhaleMs : CONFIG.exhaleMs;
+        if (state.breath.phaseElapsedMs >= currentPhaseMs) {
+          state.breath.phaseElapsedMs -= currentPhaseMs;
+          if (state.breath.phase === PHASE.INHALE) {
+            state.breath.phase = PHASE.EXHALE;
+            breathingExhaleRelease();
+          } else {
+            state.breath.phase = PHASE.INHALE;
+          }
+        }
+
+        if (state.breath.elapsedMs >= CONFIG.breathTotalMs) {
+          for (let i = 0; i < state.fish.length; i++) {
+            const f = state.fish[i];
+            if (f.state === "school") releaseFish(f, width * 0.5, -80, true);
+          }
+        }
+      }
+
+      function updatePopRings() {
+        noFill();
+        strokeWeight(1);
+        const t = nowMs();
+
+        for (let i = state.pops.length - 1; i >= 0; i--) {
+          const p = state.pops[i];
+          const age = t - p.bornAt;
+          if (age > CONFIG.popLifeMs) {
+            state.pops.splice(i, 1);
+            continue;
+          }
+
+          const alpha = (1 - age / CONFIG.popLifeMs) * 72;
+          stroke(218, 246, 255, alpha);
+          circle(p.x, p.y, 4 + age * 0.05);
+          stroke(218, 246, 255, alpha * 0.55);
+          circle(p.x, p.y, 1.8 + age * 0.03);
+        }
+      }
+
+      function updateFleeTrailBubbles(dt) {
+        const t = nowMs();
+        noFill();
+        strokeWeight(1);
+
+        for (let i = state.bubbleFx.fleeTrail.length - 1; i >= 0; i--) {
+          const b = state.bubbleFx.fleeTrail[i];
+          const age = t - b.bornAt;
+          if (age >= b.lifeMs) {
+            state.bubbleFx.fleeTrail.splice(i, 1);
+            continue;
+          }
+
+          b.wobble += 0.009 * dt;
+          b.x += b.vx * dt + Math.sin(b.wobble) * 0.022 * dt;
+          b.y -= b.vy * dt;
+
+          const alpha = (1 - age / b.lifeMs) * CONFIG.fleeTrailAlphaMax;
+          stroke(220, 248, 255, alpha);
+          circle(b.x, b.y, b.r * 2);
+        }
+      }
+
+      function updateTapPopBubbles(dt) {
+        const t = nowMs();
+        noFill();
+        strokeWeight(1);
+
+        for (let i = state.bubbleFx.tapPop.length - 1; i >= 0; i--) {
+          const b = state.bubbleFx.tapPop[i];
+          const age = t - b.bornAt;
+          if (age >= b.lifeMs) {
+            state.bubbleFx.tapPop.splice(i, 1);
+            continue;
+          }
+
+          b.wobble += 0.014 * dt;
+
+          if (age < CONFIG.tapBurstImpulseMs) {
+            b.x += b.burstVx * dt;
+            b.y += b.burstVy * dt;
+            b.burstVx *= 0.9;
+            b.burstVy *= 0.9;
+          }
+
+          b.x += Math.sin(b.wobble) * 0.03 * dt;
+          b.y -= b.floatVy * dt;
+
+          const alpha = (1 - age / b.lifeMs) * CONFIG.tapPopAlphaMax;
+          stroke(220, 248, 255, alpha);
+          circle(b.x, b.y, b.r * 2);
+        }
+      }
+
+      function updateExhaleBloomBubbles(dt) {
+        const t = nowMs();
+        noFill();
+        strokeWeight(1);
+
+        for (let i = state.bubbleFx.exhaleBloom.length - 1; i >= 0; i--) {
+          const b = state.bubbleFx.exhaleBloom[i];
+          const age = t - b.bornAt;
+          if (age >= b.lifeMs) {
+            state.bubbleFx.exhaleBloom.splice(i, 1);
+            continue;
+          }
+
+          b.wobble += 0.008 * dt;
+          b.x += b.vx * dt + Math.sin(b.wobble) * 0.02 * dt;
+          b.y -= b.vy * dt;
+
+          const alpha = (1 - age / b.lifeMs) * CONFIG.exhaleBloomAlphaMax;
+          stroke(220, 248, 255, alpha);
+          circle(b.x, b.y, b.r * 2);
+        }
+      }
+
+      function drawBubbleFxLayers(dt) {
+        updateFleeTrailBubbles(dt);
+        updateTapPopBubbles(dt);
+        updateExhaleBloomBubbles(dt);
+      }
+
+      function formatTime(ms) {
+        const total = Math.max(0, Math.ceil(ms / 1000));
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return `${m}:${String(s).padStart(2, "0")}`;
+      }
+
+      function drawActionButton(btn, label, active) {
+        noStroke();
+        fill(active ? color(16, 88, 112, 185) : color(5, 20, 40, 150));
+        rect(btn.x, btn.y, btn.w, btn.h, 8);
+
+        fill(224, 248, 255, 230);
+        textAlign(CENTER, CENTER);
+        textSize(Math.max(12, Math.min(14, width * 0.014)));
+        text(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 0.5);
+      }
+
+      function getUiLayout() {
+        const pad = 12;
+        const barW = Math.max(220, width - pad * 2);
+        const bh = 34;
+        const gap = 8;
+        const bw = (barW - gap * 2) / 3;
+        const bx = pad;
+        const statW = Math.min(260, width * 0.5);
+        const statH = 64;
+        const statX = width - statW - pad;
+        const statY = height - statH - pad;
+
+        return {
+          pad,
+          bar: { x: bx, y: pad, w: bw, h: bh, gap },
+          status: { x: statX, y: statY, w: statW, h: statH }
+        };
+      }
+
+      function drawModeButtons(layout) {
+        const { x, y, w, h, gap } = layout.bar;
+        state.controls.relaxBtn = { x, y, w, h };
+        state.controls.declutterBtn = { x: x + w + gap, y, w, h };
+        state.controls.breathingBtn = { x: x + (w + gap) * 2, y, w, h };
+        state.controls.restartBtn = null;
+
+        drawActionButton(state.controls.relaxBtn, "Relax Mode", state.mode === MODE.RELAX);
+        drawActionButton(state.controls.declutterBtn, "Declutter Your Mind", state.mode === MODE.DECLUTTER);
+        drawActionButton(state.controls.breathingBtn, "Breathing Exercise", state.mode === MODE.BREATHING);
+      }
+
+      function drawStatusPanel(layout) {
+        const { x, y, w, h } = layout.status;
+        noStroke();
+        fill(5, 20, 40, 145);
+        rect(x, y, w, h, 10);
+        fill(224, 248, 255, 220);
+        textAlign(LEFT, TOP);
+
+        if (state.mode === MODE.DECLUTTER) {
+          textSize(Math.max(12, Math.min(16, width * 0.016)));
+          text(`Fish: ${state.fish.length}`, x + 10, y + 10);
+          textSize(Math.max(11, Math.min(14, width * 0.014)));
+          text("Tap the fish and watch them swim away.", x + 10, y + 34);
+        } else if (state.mode === MODE.BREATHING || state.mode === MODE.CLEARED) {
+          textSize(Math.max(12, Math.min(16, width * 0.016)));
+          text(`Fish: ${state.fish.length}`, x + 10, y + 10);
+          const remaining = Math.max(0, CONFIG.breathTotalMs - state.breath.elapsedMs);
+          textSize(Math.max(11, Math.min(14, width * 0.014)));
+          text(`Breath: ${formatTime(remaining)}`, x + 10, y + 34);
+        } else {
+          textSize(Math.max(11, Math.min(14, width * 0.014)));
+          text("Relax mode: enjoy the calm fish flow.", x + 10, y + 22);
+        }
+      }
+
+      function drawBreathingGuide() {
+        if (state.mode === MODE.BREATHING) {
+          const cx = width * 0.5;
+          const cy = height * 0.56;
+          const phaseMs = state.breath.phase === PHASE.INHALE ? CONFIG.inhaleMs : CONFIG.exhaleMs;
+          const t = constrain(state.breath.phaseElapsedMs / phaseMs, 0, 1);
+          const ringT = state.breath.phase === PHASE.INHALE ? t : 1 - t;
+          const r = Math.min(width, height) * (0.1 + ringT * 0.12);
+
+          noFill();
+          stroke(204, 244, 255, 130);
+          strokeWeight(2);
+          circle(cx, cy, r * 2);
+          stroke(204, 244, 255, 50);
+          strokeWeight(1);
+          circle(cx, cy, (r + 16) * 2);
+
+          noStroke();
+          fill(232, 251, 255, 215);
+          textAlign(CENTER, CENTER);
+          textSize(Math.max(20, Math.min(32, width * 0.04)));
+          text(state.breath.phase === PHASE.INHALE ? "Breathe: Inhale" : "Breathe: Exhale", cx, cy - 8);
+
+          textSize(Math.max(12, Math.min(16, width * 0.016)));
+          fill(210, 240, 250, 200);
+          text(`Time left ${formatTime(CONFIG.breathTotalMs - state.breath.elapsedMs)}`, cx, cy + 22);
+        }
+      }
+
+      function drawClearedCard() {
+        if (state.fish.length === 0) {
+          state.mode = MODE.CLEARED;
+          const cardW = Math.min(360, width * 0.72);
+          const cardH = 130;
+          const cardX = (width - cardW) / 2;
+          const cardY = (height - cardH) / 2;
+
+          noStroke();
+          fill(5, 20, 40, 150);
+          rect(cardX, cardY, cardW, cardH, 12);
+
+          fill(232, 251, 255, 225);
+          textAlign(CENTER, TOP);
+          textSize(Math.max(18, Math.min(28, width * 0.03)));
+          text("Mind Cleared", cardX + cardW / 2, cardY + 16);
+
+          textSize(Math.max(12, Math.min(16, width * 0.016)));
+          fill(210, 240, 250, 190);
+          text(state.currentWisdom, cardX + cardW / 2, cardY + 52);
+
+          const rw = 132;
+          const rh = 34;
+          state.controls.restartBtn = {
+            x: cardX + (cardW - rw) / 2,
+            y: cardY + cardH - rh - 14,
+            w: rw,
+            h: rh
+          };
+          drawActionButton(state.controls.restartBtn, "Restart", true);
+        }
+      }
+
+      function drawUI() {
+        const layout = getUiLayout();
+        drawModeButtons(layout);
+        drawStatusPanel(layout);
+        drawBreathingGuide();
+        drawClearedCard();
+      }
+
+      function pointInRect(px, py, rectRef) {
+        return (
+          !!rectRef &&
+          px >= rectRef.x &&
+          px <= rectRef.x + rectRef.w &&
+          py >= rectRef.y &&
+          py <= rectRef.y + rectRef.h
+        );
+      }
+
+      function handlePress(x, y) {
+        if (pointInRect(x, y, state.controls.restartBtn)) {
+          resetWorld(MODE.RELAX);
+          return;
+        }
+
+        if (pointInRect(x, y, state.controls.declutterBtn)) {
+          state.mode = MODE.DECLUTTER;
+          return;
+        }
+
+        if (pointInRect(x, y, state.controls.breathingBtn)) {
+          state.mode = MODE.BREATHING;
+          state.breath.active = true;
+          return;
+        }
+
+        if (pointInRect(x, y, state.controls.relaxBtn)) {
+          state.mode = MODE.RELAX;
+          state.breath.active = false;
+          return;
+        }
+
+        tryPokeFish(x, y);
+      }
+
+      function mousePressed() {
+        handlePress(mouseX, mouseY);
+        return false;
+      }
+
+      function touchStarted(e) {
+        if (e && typeof e.preventDefault === "function") e.preventDefault();
+        for (let i = 0; i < touches.length; i++) handlePress(touches[i].x, touches[i].y);
+        return false;
+      }
+
+      function draw() {
+        const ts = nowMs();
+        let dt = ts - state.lastNow;
+        if (!Number.isFinite(dt) || dt <= 0) dt = 16;
+        dt = Math.min(34, Math.max(9, dt));
+        state.lastNow = ts;
+
+        // 1) Background + particles + ambient bubbles
+        drawBackground(ts);
+        updateParticles(dt);
+        updateAmbientBubbles(dt, ts);
+
+        // 2) Fish (with unified tail-driven propulsion)
+        updateBreathing(dt);
+        updateFish(dt, ts);
+        for (let i = 0; i < state.fish.length; i++) drawFish(state.fish[i], ts);
+
+        // 3/4/5) Bubble FX channels
+        updatePopRings();
+        drawBubbleFxLayers(dt);
+
+        // 6) UI
+        drawUI();
+      }
+
+      window.setup = setup;
+      window.draw = draw;
+      window.windowResized = windowResized;
+      window.mousePressed = mousePressed;
+      window.touchStarted = touchStarted;
+    })();
+  </script>
+</body>
+</html>
